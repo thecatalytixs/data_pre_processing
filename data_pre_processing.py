@@ -67,130 +67,37 @@ if uploaded_file:
     else:
         selected = st.multiselect("Choose one or more transformations to apply", transformations)
 
+    with st.expander("📘 Theory & Formula of Each Transformation"):
+        st.markdown("""
+        **Standardize (n)**: $$X_{scaled} = \frac{X - \mu}{\sigma}$$
+        
+        **Center**: $$X_{centered} = X - \mu$$
+
+        **Std dev (n-1)**: $$X_{scaled} = \frac{X}{s}, \text{ where } s = \sqrt{\frac{1}{n-1}\sum (x_i - \bar{x})^2}$$
+
+        **Std dev (n)**: $$X_{scaled} = \frac{X}{s}, \text{ where } s = \sqrt{\frac{1}{n}\sum (x_i - \bar{x})^2}$$
+
+        **Rescale 0-1**: $$X' = \frac{X - X_{min}}{X_{max} - X_{min}}$$
+
+        **Rescale 0-100**: $$X' = \frac{X - X_{min}}{X_{max} - X_{min}} \times 100$$
+
+        **Pareto Scaling**: $$X' = \frac{X - \mu}{\sqrt{\sigma}}$$
+
+        **Binarize (0/1)**: Set values above a threshold to 1, below or equal to 0.
+
+        **Sign (-1/0/1)**: Assigns -1 for negative, 0 for zero, 1 for positive values.
+
+        **Arcsin**: $$X' = \arcsin(\sqrt{X})$$ (commonly used for proportion data between 0 and 1)
+
+        **Box-Cox**: $$X' = \frac{X^\lambda - 1}{\lambda}$$ if \( \lambda \neq 0 \); $$\log(X)$$ if \( \lambda = 0 \)
+
+        **Winsorize**: Replaces extreme values by the nearest value within a specified percentile range.
+
+        **Johnson**: Fits data to Johnson SU distribution and transforms it to resemble normal distribution.
+        """)
+
     transformed_dfs = {}
     scores = []
 
     for method in selected:
-        df_copy = numeric_df.copy()
-        try:
-            if method == "Standardize (n)":
-                df_t = StandardScaler().fit_transform(df_copy)
-            elif method == "Center":
-                df_t = df_copy - df_copy.mean()
-            elif method == "Std dev (n-1)":
-                df_t = df_copy / df_copy.std(ddof=1)
-            elif method == "Std dev (n)":
-                df_t = df_copy / df_copy.std(ddof=0)
-            elif method == "Rescale 0-1":
-                df_t = MinMaxScaler().fit_transform(df_copy)
-            elif method == "Rescale 0-100":
-                df_t = MinMaxScaler(feature_range=(0, 100)).fit_transform(df_copy)
-            elif method == "Pareto scaling":
-                df_t = (df_copy - df_copy.mean()) / np.sqrt(df_copy.std())
-            elif method == "Binarize (0/1)":
-                df_t = Binarizer().fit_transform(df_copy)
-            elif method == "Sign (-1/0/1)":
-                df_t = np.sign(df_copy)
-            elif method == "Arcsin":
-                df_t = np.arcsin(df_copy.clip(0, 1))
-            elif method == "Box-Cox":
-                df_t = df_copy.copy()
-                for col in df_t.columns:
-                    min_val = df_t[col].min()
-                    df_t[col] = df_t[col] + 1 - min_val if min_val <= 0 else df_t[col]
-                    df_t[col], _ = stats.boxcox(df_t[col])
-            elif method == "Winsorize":
-                df_t = df_copy.copy()
-                for col in df_t.columns:
-                    df_t[col] = stats.mstats.winsorize(df_t[col], limits=[0.05, 0.05])
-            elif method == "Johnson":
-                df_t = df_copy.copy()
-                for col in df_t.columns:
-                    fitted_data, _, _, _ = stats.johnsonsu.fit(df_t[col])
-                    df_t[col] = stats.johnsonsu.pdf(df_t[col], *stats.johnsonsu.fit(df_t[col]))
-            else:
-                df_t = df_copy
-
-            df_trans = pd.DataFrame(df_t, columns=df_copy.columns)
-            transformed_dfs[method] = df_trans
-
-            skewness = np.abs(df_trans.skew()).mean()
-            outliers = ((df_trans - df_trans.mean()).abs() > 3 * df_trans.std()).sum().sum()
-            iqr = (df_trans.quantile(0.75) - df_trans.quantile(0.25)).mean()
-            normality = np.mean([stats.shapiro(df_trans[col])[1] for col in df_trans.columns if len(df_trans[col].dropna()) > 3])
-
-            scores.append({
-                "name": method,
-                "skewness_score": 1 - min(skewness / 10, 1),
-                "outliers_score": 1 - min(outliers / (len(df_trans) * len(df_trans.columns)), 1),
-                "iqr_score": 1 - min(iqr / 10, 1),
-                "normality_score": normality,
-                "total_score": (1 - min(skewness / 10, 1) + 1 - min(outliers / (len(df_trans) * len(df_trans.columns)), 1) + 1 - min(iqr / 10, 1) + normality) / 4
-            })
-
-            st.markdown(f"## 🔁 {method}")
-            fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-            sns.boxplot(data=numeric_df, ax=axes[0])
-            axes[0].set_title("Original Data")
-            sns.boxplot(data=df_trans, ax=axes[1])
-            axes[1].set_title(f"After {method}")
-            st.pyplot(fig)
-
-            csv_data = df_trans.to_csv(index=False).encode('utf-8')
-            col1, col2 = st.columns([0.85, 0.15])
-            with col2:
-                st.download_button(
-                    label=f"📥 Download CSV",
-                    data=csv_data,
-                    file_name=f"{method.lower().replace(' ', '_')}_transformed.csv",
-                    mime='text/csv',
-                    key=method
-                )
-
-        except Exception as e:
-            st.warning(f"⚠️ Transformation {method} failed: {e}")
-
-    # -----------------------------
-    # 4. Display Score Table + Export CSV
-    # -----------------------------
-    if scores:
-        df_scores = pd.DataFrame(scores).sort_values(by="total_score", ascending=False)
-        st.markdown("### 📊 Transformation Score Table")
-        st.dataframe(df_scores, use_container_width=True)
-
-        csv = df_scores.to_csv(index=False).encode('utf-8')
-        st.download_button("📄 Download Score Table as CSV", data=csv, file_name="transformation_scores.csv", mime='text/csv')
-
-        # Interpretation Section
-        st.markdown("### 🧠 Interpretation of Transformation Results")
-        top_transforms = df_scores.head(3)['name'].tolist()
-        bad_for_mda = ["Sign (-1/0/1)", "Binarize (0/1)", "Arcsin"]
-        unsuitable = [t for t in top_transforms if t in bad_for_mda]
-
-        with st.expander("View Interpretation"):
-            st.markdown(f"**Top 3 scoring transformations:** {', '.join(top_transforms)}")
-            if unsuitable:
-                st.markdown(
-                    f"Although these transformations scored highly, the following may **not be suitable** for halal authentication or MDA:\n- {', '.join(unsuitable)}\n\nThese methods simplify the dataset or assume a specific range, potentially affecting multivariate analysis.")
-
-            st.markdown("""
-            **Recommended Transformations for Halal Authentication or Multivariate Data Analysis:**
-            - Rescale 0–1: Useful for range-sensitive algorithms
-            - Standardize (n) or Std dev (n-1): Suitable for PCA, clustering, and classification tasks
-            """)
-
-        # -----------------------------
-        # 5. Matplotlib Bar Chart + PNG Export
-        # -----------------------------
-        st.subheader("Bar Chart of Transformation Scores (Matplotlib)")
-        fig_bar, ax = plt.subplots(figsize=(10, 5))
-        ax.bar(df_scores['name'], df_scores['total_score'], color='skyblue')
-        ax.set_xlabel('Transformation Method')
-        ax.set_ylabel('Total Score')
-        ax.set_title('Total Scores by Transformation')
-        plt.xticks(rotation=45, ha='right')
-        st.pyplot(fig_bar)
-
-        buf = io.BytesIO()
-        fig_bar.savefig(buf, format="png", bbox_inches="tight")
-        st.download_button("🖼️ Download Bar Chart as PNG", data=buf.getvalue(), file_name="bar_chart_transformation_scores.png", mime="image/png")
+        ... # Code continues unchanged

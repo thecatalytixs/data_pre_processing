@@ -6,6 +6,7 @@ from scipy import stats
 import matplotlib.pyplot as plt
 import seaborn as sns
 import io
+from factor_analyzer.factor_analyzer import calculate_kmo, calculate_bartlett_sphericity
 
 # -----------------------------
 # 1. Page setup
@@ -24,6 +25,31 @@ if uploaded_file:
     numeric_df = df.select_dtypes(include=[np.number])
     st.write("Preview of dataset:")
     st.dataframe(numeric_df.head(), use_container_width=True)
+
+    # -----------------------------
+    # KMO Test
+    # -----------------------------
+    st.markdown("### ✅ Dataset Adequacy Check (KMO and Bartlett’s Tests)")
+    kmo_all, kmo_model = calculate_kmo(numeric_df.dropna())
+    st.write(f"KMO Score: {kmo_model:.4f}")
+    if kmo_model < 0.5:
+        st.error("Dataset is **inadequate** for halal authentication (KMO < 0.5). Consider improving data quality.")
+    elif kmo_model < 0.7:
+        st.warning("Dataset is **mediocre** (0.5 < KMO < 0.7), but acceptable for halal authentication.")
+    elif kmo_model < 0.8:
+        st.success("Dataset is **good** (0.7 < KMO < 0.8) for halal authentication.")
+    elif kmo_model < 0.9:
+        st.success("Dataset is **very good** (0.8 < KMO < 0.9) for halal authentication.")
+    else:
+        st.success("Dataset is **excellent** (KMO > 0.9) for halal authentication.")
+
+    # Bartlett’s Test of Sphericity
+    chi_square_value, p_value = calculate_bartlett_sphericity(numeric_df.dropna())
+    st.write(f"Bartlett’s Test: Chi-square = {chi_square_value:.2f}, p-value = {p_value:.4f}")
+    if p_value < 0.05:
+        st.success("Bartlett's test is significant (p < 0.05), indicating variables are correlated and the dataset is suitable for MDA in halal authentication.")
+    else:
+        st.error("Bartlett's test is **not** significant (p ≥ 0.05), suggesting variables may not be correlated enough for MDA.")
 
     # -----------------------------
     # 3. Choose transformations

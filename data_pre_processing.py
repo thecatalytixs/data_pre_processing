@@ -35,7 +35,12 @@ if uploaded_file:
         "Rescale 0-1", "Rescale 0-100", "Pareto scaling", "Binarize (0/1)", 
         "Sign (-1/0/1)", "Arcsin", "Box-Cox", "Winsorize", "Johnson"
     ]
-    selected = st.multiselect("Choose one or more transformations to apply", transformations)
+
+    all_selected = st.checkbox("Select All Transformations")
+    if all_selected:
+        selected = transformations
+    else:
+        selected = st.multiselect("Choose one or more transformations to apply", transformations)
 
     transformed_dfs = {}
     scores = []
@@ -107,15 +112,17 @@ if uploaded_file:
             axes[1].set_title(f"After {method}")
             st.pyplot(fig)
 
-            # Download button for transformed data
+            # Download button for transformed data (top right corner)
             csv_data = df_trans.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label=f"📥 Download {method} Transformed Data",
-                data=csv_data,
-                file_name=f"{method.lower().replace(' ', '_')}_transformed.csv",
-                mime='text/csv',
-                key=method
-            )
+            col1, col2 = st.columns([0.85, 0.15])
+            with col2:
+                st.download_button(
+                    label=f"📥 Download CSV",
+                    data=csv_data,
+                    file_name=f"{method.lower().replace(' ', '_')}_transformed.csv",
+                    mime='text/csv',
+                    key=method
+                )
 
         except Exception as e:
             st.warning(f"⚠️ Transformation {method} failed: {e}")

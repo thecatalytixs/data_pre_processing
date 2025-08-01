@@ -26,7 +26,7 @@ def load_data(uploaded_file):
     if uploaded_file is not None:
         return pd.read_csv(uploaded_file)
     else:
-        return pd.read_csv("simulated_data.csv")  # fallback demo file
+        return pd.read_csv("simulated_data1.csv")  # fallback demo file
 
 df = load_data(uploaded_file)
 st.subheader("1. Preview of Uploaded Dataset")

@@ -6,3 +6,4 @@ plotly
 matplotlib
 reportlab
 kaleido
+seaborn

@@ -1,225 +1,160 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.preprocessing import StandardScaler, MinMaxScaler, PowerTransformer, LabelEncoder
+from sklearn.preprocessing import StandardScaler, MinMaxScaler, PowerTransformer, Binarizer
 from scipy import stats
-import seaborn as sns
 import matplotlib.pyplot as plt
-import plotly.express as px
-import plotly.graph_objects as go
-import plotly.io as pio
-from scipy.stats import skew, iqr, shapiro
+import io
+from math import pi
 
-# --- PAGE SETUP ---
-st.set_page_config(page_title="Halal Authentication - Data Transformation Viewer", layout="wide")
-st.title("Halal Authentication Data - Transformation Visualizer & Evaluator")
+# -----------------------------
+# 1. Page setup
+# -----------------------------
+st.set_page_config(page_title="Halal Data Preprocessing App", layout="wide")
+st.title("🧪 Halal Data Preprocessing App")
 
-# --- FILE UPLOAD ---
-uploaded_file = st.file_uploader("Upload your FTIR dataset (CSV format only)", type=["csv"])
+# -----------------------------
+# 2. Upload dataset
+# -----------------------------
+st.markdown("### Step 1: Upload your dataset")
+uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
 
-@st.cache_data
-def load_data(file):
-    return pd.read_csv(file) if file else None
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
+    numeric_df = df.select_dtypes(include=[np.number])
+    st.write("Preview of dataset:")
+    st.dataframe(numeric_df.head(), use_container_width=True)
 
-df = load_data(uploaded_file)
+    # -----------------------------
+    # 3. Choose transformations
+    # -----------------------------
+    st.markdown("### Step 2: Select Data Transformations")
+    transformations = [
+        "Standardize (n)", "Center", "Std dev (n-1)", "Std dev (n)", 
+        "Rescale 0-1", "Rescale 0-100", "Pareto scaling", "Binarize (0/1)", 
+        "Sign (-1/0/1)", "Arcsin", "Box-Cox", "Winsorize", "Johnson"
+    ]
+    selected = st.multiselect("Choose one or more transformations to apply", transformations)
 
-if df is not None:
-    st.subheader("1. Dataset Preview")
-    st.dataframe(df.head(), use_container_width=True)
+    transformed_dfs = {}
+    scores = []
 
-    # --- FEATURE SELECTION ---
-    exclude_cols = ["SampleID", "Class"]
-    features = df.drop(columns=[col for col in exclude_cols if col in df.columns], errors='ignore')
+    for method in selected:
+        df_copy = numeric_df.copy()
+        try:
+            if method == "Standardize (n)":
+                df_t = StandardScaler().fit_transform(df_copy)
+            elif method == "Center":
+                df_t = df_copy - df_copy.mean()
+            elif method == "Std dev (n-1)":
+                df_t = df_copy / df_copy.std(ddof=1)
+            elif method == "Std dev (n)":
+                df_t = df_copy / df_copy.std(ddof=0)
+            elif method == "Rescale 0-1":
+                df_t = MinMaxScaler().fit_transform(df_copy)
+            elif method == "Rescale 0-100":
+                df_t = MinMaxScaler(feature_range=(0, 100)).fit_transform(df_copy)
+            elif method == "Pareto scaling":
+                df_t = (df_copy - df_copy.mean()) / np.sqrt(df_copy.std())
+            elif method == "Binarize (0/1)":
+                df_t = Binarizer().fit_transform(df_copy)
+            elif method == "Sign (-1/0/1)":
+                df_t = np.sign(df_copy)
+            elif method == "Arcsin":
+                df_t = np.arcsin(df_copy.clip(0, 1))
+            elif method == "Box-Cox":
+                df_t = df_copy.copy()
+                for col in df_t.columns:
+                    min_val = df_t[col].min()
+                    df_t[col] = df_t[col] + 1 - min_val if min_val <= 0 else df_t[col]
+                    df_t[col], _ = stats.boxcox(df_t[col])
+            elif method == "Winsorize":
+                df_t = df_copy.copy()
+                for col in df_t.columns:
+                    df_t[col] = stats.mstats.winsorize(df_t[col], limits=[0.05, 0.05])
+            elif method == "Johnson":
+                df_t = df_copy.copy()
+                for col in df_t.columns:
+                    fitted_data, _, _, _ = stats.johnsonsu.fit(df_t[col])
+                    df_t[col] = stats.johnsonsu.pdf(df_t[col], *stats.johnsonsu.fit(df_t[col]))
+            else:
+                df_t = df_copy
 
-    # --- TRANSFORMATION FUNCTIONS ---
-    def standardize_n(data): return (data - data.mean()) / data.std(ddof=0)
-    def center(data): return data - data.mean()
-    def std_n1(data): return data / data.std(ddof=1)
-    def std_n(data): return data / data.std(ddof=0)
-    def rescale_0_1(data): return pd.DataFrame(MinMaxScaler().fit_transform(data), columns=data.columns)
-    def rescale_0_100(data): return ((data - data.min()) / (data.max() - data.min())) * 100
-    def pareto(data): return (data - data.mean()) / np.sqrt(data.std())
-    def binarize(data): return (data > 0).astype(int)
-    def sign_func(data): return np.sign(data)
-    def arcsin_func(data): return np.arcsin(np.sqrt(np.clip(data, 0, 1)))
-    def boxcox_func(data):
-        df_out = pd.DataFrame()
-        for col in data.columns:
-            positive = data[col] + abs(data[col].min()) + 1
-            df_out[col], _ = stats.boxcox(positive)
-        return df_out
-    def winsorize_func(data): return pd.DataFrame({col: stats.mstats.winsorize(data[col], limits=[0.05, 0.05]) for col in data.columns})
-    def johnson_func(data): return pd.DataFrame(PowerTransformer(method='yeo-johnson').fit_transform(data), columns=data.columns)
+            df_trans = pd.DataFrame(df_t, columns=df_copy.columns)
+            transformed_dfs[method] = df_trans
 
-    transformations = {
-        "Standardize (n)": standardize_n,
-        "Center": center,
-        "/ Std dev (n-1)": std_n1,
-        "/ Std dev (n)": std_n,
-        "Rescale 0–1": rescale_0_1,
-        "Rescale 0–100": rescale_0_100,
-        "Pareto scaling": pareto,
-        "Binarize (0/1)": binarize,
-        "Sign (-1/0/1)": sign_func,
-        "Arcsin": arcsin_func,
-        "Box-Cox": boxcox_func,
-        "Winsorize": winsorize_func,
-        "Johnson": johnson_func
-    }
+            # Scoring logic
+            skewness = np.abs(df_trans.skew()).mean()
+            outliers = ((df_trans - df_trans.mean()).abs() > 3 * df_trans.std()).sum().sum()
+            iqr = (df_trans.quantile(0.75) - df_trans.quantile(0.25)).mean()
+            normality = np.mean([stats.shapiro(df_trans[col])[1] for col in df_trans.columns if len(df_trans[col].dropna()) > 3])
 
-    # --- TRANSFORMATION SELECTION ---
-    st.subheader("2. Select Transformations to Compare")
-    selected = st.multiselect("Choose transformations", list(transformations.keys()))
+            scores.append({
+                "name": method,
+                "skewness_score": 1 - min(skewness / 10, 1),
+                "outliers_score": 1 - min(outliers / (len(df_trans) * len(df_trans.columns)), 1),
+                "iqr_score": 1 - min(iqr / 10, 1),
+                "normality_score": normality,
+                "total_score": (1 - min(skewness / 10, 1) + 1 - min(outliers / (len(df_trans) * len(df_trans.columns)), 1) + 1 - min(iqr / 10, 1) + normality) / 4
+            })
 
-    # --- BOX PLOTS ---
-    if selected:
-        for name in selected:
-            st.markdown(f"### 🔄 {name}")
-            try:
-                transformed = transformations[name](features.copy())
-                fig, axes = plt.subplots(1, 2, figsize=(14, 5))
-                sns.boxplot(data=features, ax=axes[0])
-                axes[0].set_title("Original Data")
-                sns.boxplot(data=transformed, ax=axes[1])
-                axes[1].set_title(f"After {name}")
-                st.pyplot(fig)
-            except Exception as e:
-                st.warning(f"{name} failed: {e}")
+        except Exception as e:
+            st.warning(f"⚠️ Transformation {method} failed: {e}")
 
-        # --- SCORING INTERPRETATION ---
-        st.subheader("3. Interpretation: Best Transformation")
+    # -----------------------------
+    # 4. Display Score Table + Export CSV
+    # -----------------------------
+    if scores:
+        df_scores = pd.DataFrame(scores).sort_values(by="total_score", ascending=False)
+        st.markdown("### 📊 Transformation Score Table")
+        st.dataframe(df_scores, use_container_width=True)
 
-        scores = []
-        for name in selected:
-            try:
-                transformed = transformations[name](features.copy())
-                skews = transformed.apply(lambda x: skew(x, nan_policy='omit'))
-                total_skew = np.sum(np.abs(skews))
+        csv = df_scores.to_csv(index=False).encode('utf-8')
+        st.download_button("📄 Download Score Table as CSV", data=csv, file_name="transformation_scores.csv", mime='text/csv')
 
-                outlier_count = 0
-                for col in transformed.columns:
-                    Q1 = transformed[col].quantile(0.25)
-                    Q3 = transformed[col].quantile(0.75)
-                    IQR = Q3 - Q1
-                    lower = Q1 - 1.5 * IQR
-                    upper = Q3 + 1.5 * IQR
-                    outliers = ((transformed[col] < lower) | (transformed[col] > upper)).sum()
-                    outlier_count += outliers
+        # -----------------------------
+        # 5. Matplotlib Bar Chart + PNG Export
+        # -----------------------------
+        st.subheader("Bar Chart of Transformation Scores (Matplotlib)")
+        fig_bar, ax = plt.subplots(figsize=(10, 5))
+        ax.bar(df_scores['name'], df_scores['total_score'], color='skyblue')
+        ax.set_xlabel('Transformation Method')
+        ax.set_ylabel('Total Score')
+        ax.set_title('Total Scores by Transformation')
+        plt.xticks(rotation=45, ha='right')
+        st.pyplot(fig_bar)
 
-                total_iqr = transformed.apply(iqr).sum()
+        buf = io.BytesIO()
+        fig_bar.savefig(buf, format="png", bbox_inches="tight")
+        st.download_button("🖼️ Download Bar Chart as PNG", data=buf.getvalue(), file_name="bar_chart_transformation_scores.png", mime="image/png")
 
-                shapiro_pvals = []
-                for col in transformed.columns:
-                    try:
-                        _, p = shapiro(transformed[col].sample(min(5000, len(transformed[col]))))
-                        shapiro_pvals.append(p)
-                    except:
-                        pass
-                avg_pval = np.mean(shapiro_pvals) if shapiro_pvals else 0
+        # -----------------------------
+        # 6. Matplotlib Radar Chart + PNG Export
+        # -----------------------------
+        st.subheader("Radar Chart of Top 5 Transformations (Matplotlib)")
+        radar_df = df_scores.head(5)
+        metrics = ["skewness_score", "outliers_score", "iqr_score", "normality_score"]
+        labels = ["Skewness", "Outliers", "IQR", "Normality"]
+        num_vars = len(metrics)
+        angles = [n / float(num_vars) * 2 * pi for n in range(num_vars)]
+        angles += angles[:1]
 
-                scores.append({
-                    "name": name,
-                    "skewness": total_skew,
-                    "outliers": outlier_count,
-                    "iqr": total_iqr,
-                    "normality": avg_pval
-                })
+        fig_radar, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
+        colors = plt.cm.tab10.colors
 
-            except Exception:
-                continue
+        for i, (_, row) in enumerate(radar_df.iterrows()):
+            values = [row[m] for m in metrics]
+            values += values[:1]
+            ax.plot(angles, values, label=row["name"], color=colors[i % len(colors)], linewidth=2)
+            ax.fill(angles, values, alpha=0.2, color=colors[i % len(colors)])
 
-        if scores:
-            df_scores = pd.DataFrame(scores)
-            for col in ["skewness", "outliers", "iqr"]:
-                df_scores[col + "_score"] = 1 - (df_scores[col] - df_scores[col].min()) / (df_scores[col].max() - df_scores[col].min() + 1e-10)
-            df_scores["normality_score"] = df_scores["normality"] / (df_scores["normality"].max() + 1e-10)
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels(labels)
+        ax.set_yticklabels([])
+        ax.set_title("Radar Chart of Metric Profiles (Normalized)", size=14)
+        ax.legend(loc='upper right', bbox_to_anchor=(1.4, 1.1))
+        st.pyplot(fig_radar)
 
-            df_scores["final_score"] = (
-                0.4 * df_scores["skewness_score"] +
-                0.3 * df_scores["outliers_score"] +
-                0.2 * df_scores["iqr_score"] +
-                0.1 * df_scores["normality_score"]
-            )
-
-            df_scores = df_scores.sort_values(by="final_score", ascending=False)
-            best_transform = df_scores.iloc[0]["name"]
-
-            st.markdown(f"### 🏆 Best Transformation: **{best_transform}**")
-            st.dataframe(df_scores[["name", "skewness", "outliers", "iqr", "normality", "final_score"]].round(3), use_container_width=True)
-
-            # --- VISUALIZATIONS ---
-            st.subheader("4. Visual Comparison of Scores")
-
-            # Bar chart
-            fig_bar = px.bar(
-                df_scores,
-                x="name",
-                y="final_score",
-                color="final_score",
-                title="Final Composite Score by Transformation",
-                labels={"name": "Transformation", "final_score": "Score"},
-                color_continuous_scale="Viridis"
-            )
-            fig_bar.update_layout(xaxis_title="Transformation", yaxis_title="Composite Score")
-            st.plotly_chart(fig_bar, use_container_width=True)
-
-            # Radar chart
-            st.markdown("### 🕸️ Radar Chart of Top 5 Transformations")
-            radar_df = df_scores.head(5)
-            metrics = ["skewness_score", "outliers_score", "iqr_score", "normality_score"]
-            categories = ["Skewness", "Outliers", "IQR", "Normality"]
-
-            fig_radar = go.Figure()
-            for _, row in radar_df.iterrows():
-                fig_radar.add_trace(go.Scatterpolar(
-                    r=[row[m] for m in metrics],
-                    theta=categories,
-                    fill='toself',
-                    name=row["name"]
-                ))
-
-            fig_radar.update_layout(
-                polar=dict(radialaxis=dict(visible=True, range=[0, 1])),
-                showlegend=True,
-                title="Radar Chart of Metric Profiles (Normalized)"
-            )
-            st.plotly_chart(fig_radar, use_container_width=True)
-
-            # --- DOWNLOAD SECTION ---
-            st.subheader("5. Download Results")
-
-            csv_data = df_scores.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📄 Download Score Table as CSV",
-                data=csv_data,
-                file_name="transformation_scores.csv",
-                mime="text/csv"
-            )
-
-            try:
-                bar_buf = pio.to_image(fig_bar, format="png")
-                st.download_button(
-                    label="🖼️ Download Bar Chart as PNG",
-                    data=bar_buf,
-                    file_name="bar_chart_transformation_scores.png",
-                    mime="image/png"
-                )
-            except Exception as e:
-                st.warning(f"Bar chart export failed. Try `pip install kaleido`: {e}")
-
-            try:
-                radar_buf = pio.to_image(fig_radar, format="png")
-                st.download_button(
-                    label="🖼️ Download Radar Chart as PNG",
-                    data=radar_buf,
-                    file_name="radar_chart_metric_profiles.png",
-                    mime="image/png"
-                )
-            except Exception as e:
-                st.warning(f"Radar chart export failed. Try `pip install kaleido`: {e}")
-
-        else:
-            st.warning("No transformation could be processed successfully.")
-
-else:
-    st.info("Please upload a CSV file to begin.")
+        radar_buf = io.BytesIO()
+        fig_radar.savefig(radar_buf, format='png', bbox_inches='tight')
+        st.download_button("🕸️ Download Radar Chart as PNG", data=radar_buf.getvalue(), file_name="radar_chart_metric_profiles.png", mime="image/png")

@@ -95,9 +95,3 @@ if uploaded_file:
 
         **Johnson**: Fits data to Johnson SU distribution and transforms it to resemble normal distribution.
         """)
-
-    transformed_dfs = {}
-    scores = []
-
-    for method in selected:
-        ... # Code continues unchanged

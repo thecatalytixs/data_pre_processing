@@ -7,3 +7,5 @@ matplotlib
 reportlab
 kaleido
 seaborn
+scipy
+matplotlib

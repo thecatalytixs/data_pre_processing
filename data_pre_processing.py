@@ -6,7 +6,6 @@ from scipy import stats
 import matplotlib.pyplot as plt
 import seaborn as sns
 import io
-from math import pi
 
 # -----------------------------
 # 1. Page setup
@@ -153,34 +152,3 @@ if uploaded_file:
         buf = io.BytesIO()
         fig_bar.savefig(buf, format="png", bbox_inches="tight")
         st.download_button("🖼️ Download Bar Chart as PNG", data=buf.getvalue(), file_name="bar_chart_transformation_scores.png", mime="image/png")
-
-        # -----------------------------
-        # 6. Matplotlib Radar Chart + PNG Export
-        # -----------------------------
-        st.subheader("Radar Chart of Top 5 Transformations (Matplotlib)")
-        radar_df = df_scores.head(5)
-        metrics = ["skewness_score", "outliers_score", "iqr_score", "normality_score"]
-        labels = ["Skewness", "Outliers", "IQR", "Normality"]
-        num_vars = len(metrics)
-        angles = [n / float(num_vars) * 2 * pi for n in range(num_vars)]
-        angles += angles[:1]
-
-        fig_radar, ax = plt.subplots(figsize=(6, 6), subplot_kw=dict(polar=True))
-        colors = plt.cm.tab10.colors
-
-        for i, (_, row) in enumerate(radar_df.iterrows()):
-            values = [row[m] for m in metrics]
-            values += values[:1]
-            ax.plot(angles, values, label=row["name"], color=colors[i % len(colors)], linewidth=2)
-            ax.fill(angles, values, alpha=0.2, color=colors[i % len(colors)])
-
-        ax.set_xticks(angles[:-1])
-        ax.set_xticklabels(labels)
-        ax.set_yticklabels([])
-        ax.set_title("Radar Chart of Metric Profiles (Normalized)", size=14)
-        ax.legend(loc='upper right', bbox_to_anchor=(1.4, 1.1))
-        st.pyplot(fig_radar)
-
-        radar_buf = io.BytesIO()
-        fig_radar.savefig(radar_buf, format='png', bbox_inches='tight')
-        st.download_button("🕸️ Download Radar Chart as PNG", data=radar_buf.getvalue(), file_name="radar_chart_metric_profiles.png", mime="image/png")

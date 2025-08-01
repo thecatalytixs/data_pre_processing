@@ -128,7 +128,6 @@ if uploaded_file:
                 "total_score": (1 - min(skewness / 10, 1) + 1 - min(outliers / (len(df_trans) * len(df_trans.columns)), 1) + 1 - min(iqr / 10, 1) + normality) / 4
             })
 
-            # Display Boxplots
             st.markdown(f"## 🔁 {method}")
             fig, axes = plt.subplots(1, 2, figsize=(12, 5))
             sns.boxplot(data=numeric_df, ax=axes[0])
@@ -137,7 +136,6 @@ if uploaded_file:
             axes[1].set_title(f"After {method}")
             st.pyplot(fig)
 
-            # Download button for transformed data (top right corner)
             csv_data = df_trans.to_csv(index=False).encode('utf-8')
             col1, col2 = st.columns([0.85, 0.15])
             with col2:
@@ -162,6 +160,24 @@ if uploaded_file:
 
         csv = df_scores.to_csv(index=False).encode('utf-8')
         st.download_button("📄 Download Score Table as CSV", data=csv, file_name="transformation_scores.csv", mime='text/csv')
+
+        # Interpretation Section
+        st.markdown("### 🧠 Interpretation of Transformation Results")
+        top_transforms = df_scores.head(3)['name'].tolist()
+        bad_for_mda = ["Sign (-1/0/1)", "Binarize (0/1)", "Arcsin"]
+        unsuitable = [t for t in top_transforms if t in bad_for_mda]
+
+        with st.expander("View Interpretation"):
+            st.markdown(f"**Top 3 scoring transformations:** {', '.join(top_transforms)}")
+            if unsuitable:
+                st.markdown(
+                    f"Although these transformations scored highly, the following may **not be suitable** for halal authentication or MDA:\n- {', '.join(unsuitable)}\n\nThese methods simplify the dataset or assume a specific range, potentially affecting multivariate analysis.")
+
+            st.markdown("""
+            **Recommended Transformations for Halal Authentication or Multivariate Data Analysis:**
+            - Rescale 0–1: Useful for range-sensitive algorithms
+            - Standardize (n) or Std dev (n-1): Suitable for PCA, clustering, and classification tasks
+            """)
 
         # -----------------------------
         # 5. Matplotlib Bar Chart + PNG Export

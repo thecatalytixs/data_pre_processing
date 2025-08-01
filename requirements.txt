@@ -9,3 +9,4 @@ kaleido
 seaborn
 scipy
 matplotlib
+factor_analyzer
